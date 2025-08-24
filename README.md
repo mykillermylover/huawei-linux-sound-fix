@@ -61,5 +61,6 @@ If you want to thank me for this solution, you can subscribe to my [Github profi
 * [MolecuLarva](https://github.com/Smoren/molecular-ts) — Virtual chemistry simultaion. Visualization of the behavior of particles in 2-dimensional and 3-dimensional space for artifical life research.
 * [IterTools TS](https://github.com/Smoren/itertools-ts) — Extended itertools port for TypeScript and JavaScript. Provides a huge set of functions for working with iterable collections (including async ones).
 * [Genetic Search TS](https://github.com/Smoren/genetic-search-ts) — Multiprocessing Genetic Algorithm Implementation for TypeScript.
+* [AbstractRepo](https://github.com/Smoren/abstractrepo-pypi) - Python Abstract Repository Pattern Components (with SQLAlchemy support).
 * [Schemator PHP](https://github.com/Smoren/schemator-php) — Schematic data mapper for converting nested data structures (any composition of associative arrays, non-associative arrays and objects) according to the given conversion schema.
 * [ArrayView PHP](https://github.com/Smoren/array-view-php) — tools to create array views for easy data manipulation, select elements using Python-like slice notation, enable efficient selection of elements using index lists and boolean masks.

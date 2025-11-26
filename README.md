@@ -1,4 +1,4 @@
-# Huawei Matebook 14s / 16s soundcard fix for Ubuntu / Fedora / Arch
+# Huawei Matebook 14s / 16s soundcard fix for Ubuntu / Fedora / Arch / NixOS (new)
 
 ## Problem
 
@@ -30,6 +30,49 @@ A daemon has been implemented that monitors the connection/disconnection of head
 ```bash
 bash install.sh
 ```
+
+### NixOS Example:
+```nix
+{ pkgs, ... }:
+let
+  src = pkgs.fetchFromGitHub {
+    owner = "mykillermylover";
+    repo = "huawei-ubuntu-sound-fix";
+    rev = "master";
+    sha256 = ""; # Add sha256 from error
+  };
+
+  huawei-sound-fix = pkgs.stdenv.mkDerivation {
+    name = "huawei-sound-fix";
+    src = src;
+    installPhase = ''
+      mkdir -p $out/bin
+      chmod +x huawei-soundcard-headphones-monitor.sh
+      cp huawei-soundcard-headphones-monitor.sh $out/bin/
+    '';
+  };
+in
+{
+  systemd.services.huawei-sound-fix = {
+    wantedBy = [ "multi-user.target" ];
+    description = "Huawei soundcard headphones monitor";
+
+    path = with pkgs; [
+      alsa-utils
+      alsa-tools
+      gawk
+      procps
+    ];
+    serviceConfig = {
+      ExecStart = "${huawei-sound-fix}/bin/huawei-soundcard-headphones-monitor.sh";
+      User = "root";
+      Restart = "on-failure";
+      RestartSec = 1;
+    };
+  };
+}
+```
+
 
 ## Daemon control commands
 ```bash

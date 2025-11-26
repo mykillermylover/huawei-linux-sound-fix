@@ -18,10 +18,13 @@ set -e
 #
 
 # ensures script can run only once at a time
-pidof -o %PPID -x $0 >/dev/null && echo "Script $0 already running" && exit 1
+pidof -o %PPID -x "$0" >/dev/null && {
+    echo "Script $0 already running"
+    exit 1
+}
 
 function move_output() {
-   hda-verb /dev/snd/hwC0D0 0x16 0x701 "$@" > /dev/null 2> /dev/null
+    hda-verb "$hw_dev" 0x16 0x701 "$1" >/dev/null 2>&1
 }
 
 function move_output_to_speaker() {
@@ -36,73 +39,98 @@ function switch_to_speaker() {
     move_output_to_speaker
 
     # enable speaker
-    hda-verb /dev/snd/hwC0D0 0x17 0x70C 0x0002 > /dev/null 2> /dev/null
+    hda-verb "$hw_dev" 0x17 0x70C 0x0002 >/dev/null 2>&1
 
     # disable headphones
-    hda-verb /dev/snd/hwC0D0 0x1 0x715 0x2 > /dev/null 2> /dev/null
+    hda-verb "$hw_dev" 0x1 0x715 0x2 >/dev/null 2>&1
+
+    # mute headphones
+    amixer -c"${card_index}" set Headphone mute >/dev/null 2>&1 || true
 }
 
 function switch_to_headphones() {
     move_output_to_headphones
 
     # disable speaker
-    hda-verb /dev/snd/hwC0D0 0x17 0x70C 0x0000 > /dev/null 2> /dev/null
+    hda-verb "$hw_dev" 0x17 0x70C 0x0000 >/dev/null 2>&1
 
     # pin output mode
-    hda-verb /dev/snd/hwC0D0 0x1 0x717 0x2 > /dev/null 2> /dev/null
-
+    hda-verb "$hw_dev" 0x1 0x717 0x2 >/dev/null 2>&1
     # pin enable
-    hda-verb /dev/snd/hwC0D0 0x1 0x716 0x2 > /dev/null 2> /dev/null
-
+    hda-verb "$hw_dev" 0x1 0x716 0x2 >/dev/null 2>&1
     # clear pin value
-    hda-verb /dev/snd/hwC0D0 0x1 0x715 0x0 > /dev/null 2> /dev/null
-
-    # sets amixer sink port to headphones instead of the speaker
-    pacmd set-sink-port alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp__sink "[Out] Headphones"
+    hda-verb "$hw_dev" 0x1 0x715 0x0 >/dev/null 2>&1
+    
+    # unmute headphones
+    amixer -c"${card_index}" set Headphone unmute >/dev/null 2>&1 || true
 }
 
 function get_sound_card_index() {
-    card_index=$(cat /proc/asound/cards | grep sof-hda-dsp | head -n1 | grep -Eo "^\s*[0-9]+")
-    # remove leading white spaces
-    card_index="${card_index#"${card_index%%[![:space:]]*}"}"
-    echo $card_index
+    # searching card id via awk
+    awk '/sof-hda-dsp|sofhdadsp/ {print $1; exit}' /proc/asound/cards || true
+}
+
+function jack_plugged() {
+    # Reading headphone pin state 0x16 (Headphones Jack)
+    local out
+    out="$(hda-verb "$hw_dev" 0x16 0xF09 0 2>/dev/null)" || return 1
+
+    # Get latest hex-value like 0x8XXXXXXX
+    local val
+    val="$(printf '%s\n' "$out" | grep -Eo '0x[0-9a-fA-F]+' | tail -n1)"
+
+    # If not hex = no jack
+    [ -n "$val" ] || return 1
+
+    # Check high-order bit presence detect
+    # shell: "(( val & 0x80000000 ))" doesnt work with string
+    local num=$(( val ))
+    if (( num & 0x80000000 )); then
+    return 0   # Jack in
+    else
+    return 1   # Jack out
+    fi
 }
 
 sleep 2 # allows audio system to initialise first
 
-card_index=$(get_sound_card_index)
-if [ $card_index == "" ]; then
-    echo "sof-dha-dsp card is not found in /proc/asound/cards"
-    return 1
+card_index="$(get_sound_card_index)"
+if [ -z "$card_index" ]; then
+    echo "sof-hda-dsp card is not found in /proc/asound/cards"
+    exit 1
+fi
+
+hw_dev="/dev/snd/hwC${card_index}D0"
+
+if [ ! -e "$hw_dev" ]; then
+    echo "Device node $hw_dev not found"
+    exit 1
 fi
 
 old_status=0
 
 while true; do
-    # if headphone jack isn't plugged:
-    if amixer "-c${card_index}" get Headphone | grep -q "off"; then
-        status=1
-	    move_output_to_speaker
-    # if headphone jack is plugged:
+    # Jack plugged = sound to headphones, not plugged = speaker
+    if jack_plugged; then
+    status=1
+    move_output_to_headphones
     else
-        status=2
-	    move_output_to_headphones
+    status=2
+    move_output_to_speaker
     fi
 
-    if [ ${status} -ne ${old_status} ]; then
-        case "${status}" in
-            1)
-                message="Headphones disconnected"
-                switch_to_speaker
-                ;;
-            2)
-                message="Headphones connected"
-                switch_to_headphones
-                ;;
-        esac
-
-        echo "${message}"
-        old_status=$status
+    if [ "$status" -ne "$old_status" ]; then
+    case "$status" in
+        1)
+        echo "Headphones connected"
+        switch_to_headphones
+        ;;
+        2)
+        echo "Headphones disconnected"
+        switch_to_speaker
+        ;;
+    esac
+    old_status=$status
     fi
 
     sleep .3
